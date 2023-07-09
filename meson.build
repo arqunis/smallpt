@@ -9,3 +9,9 @@ project('smallpt', ['cpp'],
 executable('smallpt', files(['src/main.cpp']),
   cpp_args : ['-fopenmp'],
   link_args : ['-fopenmp'])
+
+if 'd' in get_option('languages')
+  add_languages('d', required : true)
+
+  executable('smallptd', files(['src/main.d']))
+endif
