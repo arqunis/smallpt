@@ -50,7 +50,7 @@ struct Vec {
         return x * right.x + y * right.y + z * right.z;
     }
 
-    constexpr Vec cross(Vec const& right) noexcept {
+    constexpr Vec cross(Vec const& right) const noexcept {
         return Vec(
             y * right.z - z * right.y,
             z * right.x - x * right.z,
