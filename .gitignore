@@ -1,0 +1,14 @@
+build/
+compile_commands.json
+image.ppm
+
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst
