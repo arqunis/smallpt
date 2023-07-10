@@ -154,8 +154,62 @@ int toInt(const double x) @safe @nogc pure nothrow {
     return cast(int)(pow(clamp(x), 1 / 2.2) * 255 + 0.5);
 }
 
+void renderRow(
+    const int y,
+    scope Vec[] canvas,
+    const int samples,
+    const Vec cx,
+    const Vec cy,
+    const Ray cam,
+) @trusted @nogc nothrow {
+    ushort[3] Xi = [0, 0, cast(ushort)(y * y * y)];
+
+    // Loop cols
+    foreach (x; 0 .. width) {
+        // 2x2 subpixel rows
+        foreach (sy; 0 .. 2) {
+            const size_t index = (height - y - 1) * width + x;
+
+            // 2x2 subpixel cols
+            foreach (sx; 0 .. 2) {
+                Vec r;
+
+                foreach (_; 0 .. samples) {
+                    const double r1 = 2 * erand48(Xi);
+                    const double r2 = 2 * erand48(Xi);
+
+                    const double dx =
+                        r1 < 1 ? sqrt(r1) - 1 : 1 - sqrt(2 - r1);
+                    const double dy =
+                        r2 < 1 ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
+
+                    const Vec direction = () {
+                        Vec result;
+                        result =
+                            cx * (((sx + 0.5 + dx) / 2 + x) / width - 0.5);
+                        result +=
+                            cy * (((sy + 0.5 + dy) / 2 + y) / height - 0.5);
+                        result += cam.direction;
+                        return result.normalize();
+                    }();
+
+                    // Camera rays are pushed forward to start in interior
+                    const Vec position = cam.position + direction * 140;
+                    r += radiance(Ray(position, direction), 0, Xi) * (1.0 / samples);
+                }
+
+                canvas[index] += Vec(clamp(r.x), clamp(r.y), clamp(r.z)) * 0.25;
+            }
+        }
+    }
+}
+
 enum int width = 1024;
 enum int height = 768;
+
+static assert(height % 4 == 0);
+
+import core.thread.osthread;
 
 void main(string[] args) {
     const int samples = (args.length >= 2) ? to!int(args[1]) / 4 : 1;
@@ -168,48 +222,22 @@ void main(string[] args) {
     auto canvas = new Vec[](width * height);
 
     // Loop over image rows
-    foreach (y; 0 .. height) {
-        stderr.writef!"\rRendering (%s spp) %5.2f%%"(samples * 4, 100. * y / (height - 1));
+    for (int y = 0; y < height; y += 8) {
+        stderr.writef!"\rRendering (%s spp) %5.2f%%"(samples * 4, 100.0 * y / (height - 1));
 
-        ushort[3] Xi = [0, 0, cast(ushort)(y * y * y)];
+        Thread[8] threads = [
+            new Thread(() => renderRow(y, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(y + 1, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(y + 2, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(y + 3, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(y + 4, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(y + 5, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(y + 6, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(y + 7, canvas, samples, cx, cy, cam)).start(),
+        ];
 
-        // Loop cols
-        foreach (x; 0 .. width) {
-            // 2x2 subpixel rows
-            foreach (sy; 0 .. 2) {
-                const size_t index = (height - y - 1) * width + x;
-
-                // 2x2 subpixel cols
-                foreach (sx; 0 .. 2) {
-                    Vec r;
-
-                    foreach (_; 0 .. samples) {
-                        const double r1 = 2 * erand48(Xi);
-                        const double r2 = 2 * erand48(Xi);
-
-                        const double dx =
-                            r1 < 1 ? sqrt(r1) - 1 : 1 - sqrt(2 - r1);
-                        const double dy =
-                            r2 < 1 ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
-
-                        const Vec direction = () {
-                            Vec result;
-                            result =
-                                cx * (((sx + 0.5 + dx) / 2 + x) / width - 0.5);
-                            result +=
-                                cy * (((sy + 0.5 + dy) / 2 + y) / height - 0.5);
-                            result += cam.direction;
-                            return result.normalize();
-                        }();
-
-                        // Camera rays are pushed forward to start in interior
-                        const Vec position = cam.position + direction * 140;
-                        r += radiance(Ray(position, direction), 0, Xi) * (1.0 / samples);
-                    }
-
-                    canvas[index] += Vec(clamp(r.x), clamp(r.y), clamp(r.z)) * 0.25;
-                }
-            }
+        foreach (thread; threads) {
+            thread.join();
         }
     }
 
