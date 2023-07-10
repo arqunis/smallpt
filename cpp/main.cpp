@@ -3,119 +3,17 @@
  * @brief smallpt, a Path Tracer by Kevin Beason, originally written in 2008.
  * @details Modified to use newer features of C++ and to be more readable.
  */
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
-struct Vec {
-    double x{0.0};
-    double y{0.0};
-    double z{0.0};
+#include <smallpt/constants.hpp>
+#include <smallpt/primitives.hpp>
+#include <smallpt/vec.hpp>
 
-    constexpr Vec() noexcept = default;
-    constexpr Vec(double x, double y, double z) noexcept : x{x}, y{y}, z{z} {}
-    constexpr Vec(double x, double y) noexcept : x{x}, y{y} {}
-    constexpr Vec(double x) noexcept : x{x} {}
-
-    friend constexpr Vec operator+(Vec const& left, Vec const& right) noexcept {
-        return Vec(left.x + right.x, left.y + right.y, left.z + right.z);
-    }
-
-    friend constexpr Vec operator-(Vec const& left, Vec const& right) noexcept {
-        return Vec(left.x - right.x, left.y - right.y, left.z - right.z);
-    }
-
-    friend constexpr Vec operator*(Vec const& left, Vec const& right) noexcept {
-        return Vec(left.x * right.x, left.y * right.y, left.z * right.z);
-    }
-
-    friend constexpr Vec operator*(Vec const& left, double right) noexcept {
-        return Vec(left.x * right, left.y * right, left.z * right);
-    }
-
-    friend constexpr Vec operator/(Vec const& left, double right) noexcept {
-        return Vec(left.x / right, left.y / right, left.z / right);
-    }
-
-    double length() const noexcept {
-        return std::sqrt(x * x + y * y + z * z);
-    }
-
-    Vec normalize() const noexcept {
-        return *this / length();
-    }
-
-    constexpr double dot(Vec const& right) const noexcept {
-        return x * right.x + y * right.y + z * right.z;
-    }
-
-    constexpr Vec cross(Vec const& right) const noexcept {
-        return Vec(
-            y * right.z - z * right.y,
-            z * right.x - x * right.z,
-            x * right.y - y * right.x);
-    }
-};
-
-struct Ray {
-    Vec position;
-    Vec direction;
-
-    constexpr Ray(Vec position, Vec direction) noexcept
-        : position{position}, direction{direction} {}
-};
-
-/// @brief Material types, which are used in `radiance`.
-enum class ReflectionType { Diffuse, Specular, Reflective };
-
-inline constexpr double eps = 1e-4;
-
-struct Sphere {
-    double radius{0.0};
-
-    Vec position;
-    Vec emission;
-    Vec colour;
-
-    ReflectionType reflection;
-
-    constexpr Sphere(
-        double radius,
-        Vec position,
-        Vec emission,
-        Vec colour,
-        ReflectionType reflection) noexcept
-        : radius{radius}, position{position}, emission{emission},
-          colour{colour}, reflection{reflection} {}
-
-    /// @brief Calculates the distance to the intersection.
-    /// @returns The distance to the ray, 0 if no hit
-    double intersection(Ray const& ray) const noexcept {
-        // Solve t^2*d.d + 2*t*(o-p).d + (o-p).(o-p)-R^2 = 0
-        Vec op = position - ray.position;
-
-        double b = op.dot(ray.direction);
-        double det = b * b - op.dot(op) + radius * radius;
-        if (det < 0) {
-            return 0;
-        }
-
-        det = std::sqrt(det);
-
-        double t = b - det;
-        if (t > eps) {
-            return t;
-        }
-
-        t = b + det;
-        if (t > eps) {
-            return t;
-        }
-
-        return 0;
-    }
-};
+using namespace smallpt;
 
 inline constexpr std::array<Sphere, 9> spheres = {
     Sphere(
@@ -174,50 +72,14 @@ inline constexpr std::array<Sphere, 9> spheres = {
         ReflectionType::Diffuse)  // Lite
 };
 
-template <typename T>
-constexpr T clamp(T x) noexcept {
-    if (x < 0) {
-        return 0;
-    }
-
-    if (x > 1) {
-        return 1;
-    }
-
-    return x;
-}
-
-inline int to_int(double x) noexcept {
-    return int(std::pow(clamp(x), 1 / 2.2) * 255 + 0.5);
-}
-
-inline constexpr double inf = 1e20;
-
-inline bool intersection(Ray const& ray, double& distance, int& id) {
-    distance = inf;
-
-    for (std::size_t i = spheres.size(); i-- > 0;) {
-        double dist = spheres[i].intersection(ray);
-
-        if (0 < dist && dist < distance) {
-            distance = dist;
-            id = static_cast<int>(i);
-        }
-    }
-
-    return distance < inf;
-}
-
-Vec radiance(
-    Ray const& ray,
-    int depth,
-    std::array<unsigned short, 3>& Xi) noexcept {
+static Vec
+radiance(Ray const& ray, int depth, span<unsigned short> Xi) noexcept {
     // Distance to intersection
-    double distance{inf};
+    double distance{infinity};
     // Id of intersected object
-    int id{0};
+    std::size_t id{0};
 
-    if (!intersection(ray, distance, id)) {
+    if (!intersection({spheres.data(), spheres.size()}, ray, distance, id)) {
         // If missed, return black
         return Vec();
     }
@@ -230,18 +92,8 @@ Vec radiance(
     Vec nl = n.dot(ray.direction) < 0 ? n : n * -1;
     Vec f = sphere.colour;
 
-    double p = [&] {
-        if (f.x > f.y && f.x > f.z) {
-            return f.x;
-        }
-
-        if (f.y > f.z) {
-            return f.y;
-        }
-
-        // max reflection
-        return f.z;
-    }();
+    // max reflection
+    double p = std::max(std::max(f.x, f.y), f.z);
 
     if (++depth > 5) {
         if (erand48(Xi.data()) >= p) {
@@ -336,13 +188,30 @@ Vec radiance(
 inline constexpr int width = 1024;
 inline constexpr int height = 768;
 
+template <typename T>
+constexpr T clamp(T x) noexcept {
+    if (x < 0) {
+        return 0;
+    }
+
+    if (x > 1) {
+        return 1;
+    }
+
+    return x;
+}
+
+inline int to_int(double x) noexcept {
+    return static_cast<int>(std::pow(clamp(x), 1 / 2.2) * 255 + 0.5);
+}
+
 int main(int argc, char* argv[]) {
     int samples = argc == 2 ? atoi(argv[1]) / 4 : 1;
 
-    Ray cam{Vec(50, 52, 295.6), Vec(0, -0.042612, -1).normalize()};
+    const Ray cam{Vec(50, 52, 295.6), Vec(0, -0.042612, -1).normalize()};
 
-    Vec cx{width * 0.5135 / height};
-    Vec cy = cx.cross(cam.direction).normalize() * 0.5135;
+    const Vec cx{width * 0.5135 / height};
+    const Vec cy = cx.cross(cam.direction).normalize() * 0.5135;
 
     Vec* canvas = new Vec[width * height];
 
@@ -368,29 +237,35 @@ int main(int argc, char* argv[]) {
                     Vec r;
 
                     for (int s = 0; s < samples; s++) {
-                        double r1 = 2 * erand48(Xi.data());
-                        double dx =
-                            r1 < 1 ? std::sqrt(r1) - 1 : 1 - std::sqrt(2 - r1);
+                        const double r1 = 2 * erand48(Xi.data());
+                        const double r2 = 2 * erand48(Xi.data());
 
-                        double r2 = 2 * erand48(Xi.data());
-                        double dy =
+                        const double dx =
+                            r1 < 1 ? std::sqrt(r1) - 1 : 1 - std::sqrt(2 - r1);
+                        const double dy =
                             r2 < 1 ? std::sqrt(r2) - 1 : 1 - std::sqrt(2 - r2);
 
-                        Vec d =
-                            cx * (((sx + 0.5 + dx) / 2 + x) / width - 0.5) +
-                            cy * (((sy + 0.5 + dy) / 2 + y) / height - 0.5) +
-                            cam.direction;
+                        const Vec direction = [&] {
+                            Vec result;
+                            result =
+                                cx * (((sx + 0.5 + dx) / 2 + x) / width - 0.5);
+                            result +=
+                                cy * (((sy + 0.5 + dy) / 2 + y) / height - 0.5);
+                            result += cam.direction;
+                            return result.normalize();
+                        }();
 
                         // Camera rays are pushed forward to start in
                         // interior
-                        d = d.normalize();
-                        Vec position = cam.position + d * 140;
-                        r = r +
-                            radiance(Ray(position, d), 0, Xi) * (1. / samples);
+                        const Vec position = cam.position + direction * 140;
+                        r += radiance(
+                                 Ray(position, direction),
+                                 0,
+                                 {Xi.data(), Xi.size()}) *
+                             (1.0 / samples);
                     }
 
-                    canvas[i] = canvas[i] +
-                                Vec(clamp(r.x), clamp(r.y), clamp(r.z)) * .25;
+                    canvas[i] += Vec(clamp(r.x), clamp(r.y), clamp(r.z)) * 0.25;
                 }
             }
         }
