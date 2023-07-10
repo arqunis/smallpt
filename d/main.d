@@ -8,11 +8,10 @@ import std.file;
 import std.stdio;
 import std.conv;
 
-import core.sys.posix.stdlib : erand48;
-
 import smallpt.constants;
 import smallpt.primitives;
 import smallpt.vec;
+import smallpt.rng;
 
 static immutable Sphere[9] spheres = [
     // Left
@@ -35,7 +34,7 @@ static immutable Sphere[9] spheres = [
     Sphere(600, Vec(50, 681.6 - .27, 81.6), Vec(12, 12, 12), Vec(), ReflectionType.Diffuse),
 ];
 
-Vec radiance(in Ray ray, const int depth, ref ushort[3] Xi) @trusted @nogc nothrow {
+Vec radiance(in Ray ray, const int depth, scope ref Rng rng) @trusted @nogc nothrow {
     const result = intersection(spheres, ray);
     if (!result.hit) {
         // If missed, return black
@@ -56,7 +55,7 @@ Vec radiance(in Ray ray, const int depth, ref ushort[3] Xi) @trusted @nogc nothr
         // max reflection
         const double p = max(f.x, f.y, f.z);
 
-        if (erand48(Xi) >= p) {
+        if (rng.advanceDouble() >= p) {
             // Russian Roulette
             return sphere.emission;
         }
@@ -67,8 +66,8 @@ Vec radiance(in Ray ray, const int depth, ref ushort[3] Xi) @trusted @nogc nothr
     switch (sphere.reflection) {
     case ReflectionType.Diffuse:
         // Ideal DIFFUSE reflection
-        const double r1 = 2 * PI * erand48(Xi);
-        const double r2 = erand48(Xi);
+        const double r1 = 2 * PI * rng.advanceDouble();
+        const double r2 = rng.advanceDouble();
         const double r2s = sqrt(r2);
 
         const Vec u = () {
@@ -86,10 +85,10 @@ Vec radiance(in Ray ray, const int depth, ref ushort[3] Xi) @trusted @nogc nothr
             return result.normalize();
         }();
 
-        return sphere.emission + f * radiance(Ray(x, direction), depth + 1, Xi);
+        return sphere.emission + f * radiance(Ray(x, direction), depth + 1, rng);
     case ReflectionType.Specular:
         // Ideal SPECULAR reflection
-        const Vec rad = radiance(Ray(x, ray.direction - (n * 2 * n.dot(ray.direction))), depth + 1, Xi);
+        const Vec rad = radiance(Ray(x, ray.direction - (n * 2 * n.dot(ray.direction))), depth + 1, rng);
         return sphere.emission + f * rad;
     case ReflectionType.Reflective:
     default:
@@ -105,7 +104,7 @@ Vec radiance(in Ray ray, const int depth, ref ushort[3] Xi) @trusted @nogc nothr
 
         // Total internal reflection
         if (cos2t < 0) {
-            return sphere.emission + (f * radiance(reflectionRay, depth + 1, Xi));
+            return sphere.emission + (f * radiance(reflectionRay, depth + 1, rng));
         }
 
         const Vec tdir = (ray.direction * nnt -
@@ -123,15 +122,15 @@ Vec radiance(in Ray ray, const int depth, ref ushort[3] Xi) @trusted @nogc nothr
         const Vec rad = () {
             if (depth > 2) {
                 // Russian roulette
-                if (erand48(Xi) < P) {
-                    return radiance(reflectionRay, depth + 1, Xi) * RP;
+                if (rng.advanceDouble() < P) {
+                    return radiance(reflectionRay, depth + 1, rng) * RP;
                 }
 
-                return radiance(Ray(x, tdir), depth + 1, Xi) * TP;
+                return radiance(Ray(x, tdir), depth + 1, rng) * TP;
             }
 
-            return radiance(reflectionRay, depth + 1, Xi) * Re +
-                radiance(Ray(x, tdir), depth + 1, Xi) * Tr;
+            return radiance(reflectionRay, depth + 1, rng) * Re +
+                radiance(Ray(x, tdir), depth + 1, rng) * Tr;
         }();
 
         return sphere.emission + f * rad;
@@ -155,6 +154,7 @@ int toInt(const double x) @safe @nogc pure nothrow {
 }
 
 void renderRow(
+    scope ref Rng rng,
     const int y,
     scope Vec[] canvas,
     const int samples,
@@ -162,8 +162,6 @@ void renderRow(
     const Vec cy,
     const Ray cam,
 ) @trusted @nogc nothrow {
-    ushort[3] Xi = [0, 0, cast(ushort)(y * y * y)];
-
     // Loop cols
     foreach (x; 0 .. width) {
         // 2x2 subpixel rows
@@ -175,8 +173,8 @@ void renderRow(
                 Vec r;
 
                 foreach (_; 0 .. samples) {
-                    const double r1 = 2 * erand48(Xi);
-                    const double r2 = 2 * erand48(Xi);
+                    const double r1 = 2 * rng.advanceDouble();
+                    const double r2 = 2 * rng.advanceDouble();
 
                     const double dx =
                         r1 < 1 ? sqrt(r1) - 1 : 1 - sqrt(2 - r1);
@@ -195,7 +193,7 @@ void renderRow(
 
                     // Camera rays are pushed forward to start in interior
                     const Vec position = cam.position + direction * 140;
-                    r += radiance(Ray(position, direction), 0, Xi) * (1.0 / samples);
+                    r += radiance(Ray(position, direction), 0, rng) * (1.0 / samples);
                 }
 
                 canvas[index] += Vec(clamp(r.x), clamp(r.y), clamp(r.z)) * 0.25;
@@ -221,19 +219,22 @@ void main(string[] args) {
 
     auto canvas = new Vec[](width * height);
 
+    enum ulong randomMagic = 13889610318698649526;
+    Rng rng = {randomMagic};
+
     // Loop over image rows
     for (int y = 0; y < height; y += 8) {
         stderr.writef!"\rRendering (%s spp) %5.2f%%"(samples * 4, 100.0 * y / (height - 1));
 
         Thread[8] threads = [
-            new Thread(() => renderRow(y, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(y + 1, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(y + 2, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(y + 3, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(y + 4, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(y + 5, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(y + 6, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(y + 7, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(rng, y, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(rng, y + 1, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(rng, y + 2, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(rng, y + 3, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(rng, y + 4, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(rng, y + 5, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(rng, y + 6, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(rng, y + 7, canvas, samples, cx, cy, cam)).start(),
         ];
 
         foreach (thread; threads) {
