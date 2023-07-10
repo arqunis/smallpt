@@ -34,7 +34,7 @@ public double intersection(in Sphere sphere, in Ray ray) @safe @nogc pure nothro
     const Vec op = sphere.position - ray.position;
 
     const double b = op.dot(ray.direction);
-    double det = b * b - op.dot(op) + sphere.radius * sphere.radius;
+    double det = (b * b) - op.dot(op) + (sphere.radius * sphere.radius);
     if (det < 0) {
         return 0;
     }

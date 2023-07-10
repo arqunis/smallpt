@@ -16,27 +16,27 @@ import smallpt.vec;
 
 static immutable Sphere[9] spheres = [
     // Left
-    Sphere(1e5, Vec(1e5 + 1, 40.8, 81.6), Vec(), Vec(.75, .25, .25), ReflectionType.Diffuse),
+    Sphere(1e5, Vec(1e5 + 1, 40.8, 81.6), Vec(), Vec(0.75, .25, .25), ReflectionType.Diffuse),
     // Right
-    Sphere(1e5, Vec(-1e5 + 99, 40.8, 81.6), Vec(), Vec(.25, .25, .75), ReflectionType.Diffuse),
+    Sphere(1e5, Vec(-1e5 + 99, 40.8, 81.6), Vec(), Vec(.25, .25, 0.75), ReflectionType.Diffuse),
     // Back
-    Sphere(1e5, Vec(50, 40.8, 1e5), Vec(), Vec(.75, .75, .75), ReflectionType.Diffuse),
+    Sphere(1e5, Vec(50, 40.8, 1e5), Vec(), Vec(0.75, 0.75, 0.75), ReflectionType.Diffuse),
     // Front
     Sphere(1e5, Vec(50, 40.8, -1e5 + 170), Vec(), Vec(), ReflectionType.Diffuse),
     // Bottom
-    Sphere(1e5, Vec(50, 1e5, 81.6), Vec(), Vec(.75, .75, .75), ReflectionType.Diffuse),
+    Sphere(1e5, Vec(50, 1e5, 81.6), Vec(), Vec(0.75, 0.75, 0.75), ReflectionType.Diffuse),
     // Top
-    Sphere(1e5, Vec(50, -1e5 + 81.6, 81.6), Vec(), Vec(.75, .75, .75), ReflectionType.Diffuse),
+    Sphere(1e5, Vec(50, -1e5 + 81.6, 81.6), Vec(), Vec(0.75, 0.75, 0.75), ReflectionType.Diffuse),
     // Mirror
-    Sphere(16.5, Vec(27, 16.5, 47), Vec(), Vec(1, 1, 1) * .999, ReflectionType.Specular),
+    Sphere(16.5, Vec(27, 16.5, 47), Vec(), Vec(1, 1, 1) * 0.999, ReflectionType.Specular),
     // Glass
-    Sphere(16.5, Vec(73, 16.5, 78), Vec(), Vec(1, 1, 1) * .999, ReflectionType.Reflective),
+    Sphere(16.5, Vec(73, 16.5, 78), Vec(), Vec(1, 1, 1) * 0.999, ReflectionType.Reflective),
     // Light
     Sphere(600, Vec(50, 681.6 - .27, 81.6), Vec(12, 12, 12), Vec(), ReflectionType.Diffuse),
 ];
 
-Vec radiance(in Ray ray, int depth, ref ushort[3] Xi) @trusted @nogc nothrow {
-    auto result = intersection(spheres, ray);
+Vec radiance(in Ray ray, const int depth, ref ushort[3] Xi) @trusted @nogc nothrow {
+    const result = intersection(spheres, ray);
     if (!result.hit) {
         // If missed, return black
         return Vec();
@@ -48,16 +48,16 @@ Vec radiance(in Ray ray, int depth, ref ushort[3] Xi) @trusted @nogc nothrow {
 
     const Vec x = ray.position + ray.direction * distance;
     const Vec n = (x - sphere.position).normalize();
-    const Vec nl = n.dot(ray.direction) < 0 ? n : n * -1;
+    const Vec nl = (n.dot(ray.direction) < 0) ? n : (n * -1);
 
     Vec f = sphere.colour;
 
-    if (++depth > 5) {
+    if (depth > 5) {
         // max reflection
         const double p = max(f.x, f.y, f.z);
 
         if (erand48(Xi) >= p) {
-            // R.R.
+            // Russian Roulette
             return sphere.emission;
         }
 
@@ -71,52 +71,50 @@ Vec radiance(in Ray ray, int depth, ref ushort[3] Xi) @trusted @nogc nothrow {
         const double r2 = erand48(Xi);
         const double r2s = sqrt(r2);
 
-        const Vec w = nl;
         const Vec u = () {
-            if (fabs(w.x) > 0.1) {
-                return Vec(0, 1).cross(w).normalize();
-            }
-
-            return Vec(1).cross(w).normalize();
+            auto result = (fabs(nl.x) > 0.1) ? Vec(0, 1) : Vec(1);
+            return result.cross(nl).normalize();
         }();
 
-        const Vec v = w.cross(u);
-        const Vec d = (u * cos(r1) * r2s + v * sin(r1) * r2s + w * sqrt(1 - r2)).normalize();
+        const Vec direction = () {
+            Vec result = u * cos(r1) * r2s;
 
-        return sphere.emission + f * radiance(Ray(x, d), depth, Xi);
+            result += nl.cross(u) * sin(r1) * r2s;
+
+            result += nl * sqrt(1 - r2);
+
+            return result.normalize();
+        }();
+
+        return sphere.emission + f * radiance(Ray(x, direction), depth + 1, Xi);
     case ReflectionType.Specular:
         // Ideal SPECULAR reflection
-        const Vec rad = radiance(Ray(x, ray.direction - n * 2 * n.dot(ray.direction)), depth, Xi);
+        const Vec rad = radiance(Ray(x, ray.direction - (n * 2 * n.dot(ray.direction))), depth + 1, Xi);
         return sphere.emission + f * rad;
     case ReflectionType.Reflective:
     default:
         // Ideal dielectric REFRACTION
-        const reflection_ray = Ray(x, ray.direction - n * 2 * n.dot(ray.direction));
+        const reflectionRay = Ray(x, ray.direction - (n * 2 * n.dot(ray.direction)));
 
         // Ray from outside going in?
         const bool into = n.dot(nl) > 0;
 
-        const double nc = 1;
-        const double nt = 1.5;
-        const double nnt = into ? (nc / nt) : (nt / nc);
+        const double nnt = into ? (1 / 1.5) : 1.5;
         const double ddn = ray.direction.dot(nl);
-        const double cos2t = 1 - nnt * nnt * (1 - ddn * ddn);
+        const double cos2t = 1 - (nnt * nnt) * (1 - ddn * ddn);
 
         // Total internal reflection
         if (cos2t < 0) {
-            return sphere.emission + f * radiance(reflection_ray, depth, Xi);
+            return sphere.emission + (f * radiance(reflectionRay, depth + 1, Xi));
         }
 
         const Vec tdir = (ray.direction * nnt -
                 n * ((into ? 1 : -1) * (ddn * nnt + sqrt(cos2t))))
             .normalize();
 
-        const double a = nt - nc;
-        const double b = nt + nc;
-        const double R0 = a * a / b * b;
         const double c = 1 - (into ? -ddn : tdir.dot(n));
 
-        const double Re = R0 + (1 - R0) * c * c * c * c * c;
+        const double Re = 0.04 + (0.96 * c * c * c * c * c);
         const double Tr = 1 - Re;
         const double P = 0.25 + 0.05 * Re;
         const double RP = Re / P;
@@ -126,14 +124,14 @@ Vec radiance(in Ray ray, int depth, ref ushort[3] Xi) @trusted @nogc nothrow {
             if (depth > 2) {
                 // Russian roulette
                 if (erand48(Xi) < P) {
-                    return radiance(reflection_ray, depth, Xi) * RP;
+                    return radiance(reflectionRay, depth + 1, Xi) * RP;
                 }
 
-                return radiance(Ray(x, tdir), depth, Xi) * TP;
+                return radiance(Ray(x, tdir), depth + 1, Xi) * TP;
             }
 
-            return radiance(reflection_ray, depth, Xi) * Re +
-                radiance(Ray(x, tdir), depth, Xi) * Tr;
+            return radiance(reflectionRay, depth + 1, Xi) * Re +
+                radiance(Ray(x, tdir), depth + 1, Xi) * Tr;
         }();
 
         return sphere.emission + f * rad;
@@ -167,15 +165,15 @@ void main(string[] args) {
     const cx = Vec(width * 0.5135 / height);
     const Vec cy = cx.cross(cam.direction).normalize() * 0.5135;
 
-    Vec[] canvas = new Vec[](width * height);
+    auto canvas = new Vec[](width * height);
 
     // Loop over image rows
     foreach (y; 0 .. height) {
         stderr.writef!"\rRendering (%s spp) %5.2f%%"(samples * 4, 100. * y / (height - 1));
 
-        // Loop cols
         ushort[3] Xi = [0, 0, cast(ushort)(y * y * y)];
 
+        // Loop cols
         foreach (x; 0 .. width) {
             // 2x2 subpixel rows
             foreach (sy; 0 .. 2) {
