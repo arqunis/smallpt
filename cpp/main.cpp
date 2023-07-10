@@ -5,6 +5,7 @@
  */
 #include <algorithm>
 #include <array>
+#include <vector>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -213,7 +214,8 @@ int main(int argc, char* argv[]) {
     const Vec cx{width * 0.5135 / height};
     const Vec cy = cx.cross(cam.direction).normalize() * 0.5135;
 
-    Vec* canvas = new Vec[width * height];
+    std::vector<Vec> canvas;
+    canvas.resize(width * height);
 
 // OpenMP
 #pragma omp parallel for schedule(dynamic, 1)
@@ -290,8 +292,6 @@ int main(int argc, char* argv[]) {
 
     std::fflush(f);
     std::fclose(f);
-
-    delete[] canvas;
 
     return 0;
 }
