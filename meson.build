@@ -30,7 +30,6 @@ if 'd' in get_option('languages')
 
   smallptd_inc = include_directories(['d/'])
   smallptd_src = files([
-    'd/smallpt/constants.d',
     'd/smallpt/primitives.d',
     'd/smallpt/rng.d',
     'd/smallpt/vec.d',

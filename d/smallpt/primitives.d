@@ -1,7 +1,6 @@
 module smallpt.primitives;
 
 import smallpt.vec;
-import smallpt.constants;
 
 import std.math;
 
@@ -26,6 +25,9 @@ public struct Ray {
     public Vec position;
     public Vec direction;
 }
+
+enum double epsilon = 1e-4;
+enum double infinity = 1e20;
 
 /// Calculates the distance to the intersection.
 /// Returns: The distance to the ray, 0 if no hit

@@ -8,7 +8,6 @@ import std.file;
 import std.stdio;
 import std.conv;
 
-import smallpt.constants;
 import smallpt.primitives;
 import smallpt.vec;
 import smallpt.rng;
