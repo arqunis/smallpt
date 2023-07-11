@@ -27,14 +27,5 @@ endif
 if 'd' in get_option('languages')
   add_languages('d', required : true)
 
-  smallptd_inc = include_directories(['d/'])
-  smallptd_src = files([
-    'd/smallpt/primitives.d',
-    'd/smallpt/radiance.d',
-    'd/smallpt/rng.d',
-    'd/smallpt/vec.d',
-    'd/main.d',
-  ])
-  executable('smallptd', smallptd_src,
-    include_directories : [smallptd_inc])
+  executable('smallptd', files(['d/main.d']))
 endif
