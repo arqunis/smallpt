@@ -1,10 +1,11 @@
 #include <smallpt/primitives.hpp>
 
-#include <smallpt/constants.hpp>
-
 #include <cmath>
 
 using namespace smallpt;
+
+static constexpr double epsilon = 1e-4;
+static constexpr double infinity = 1e20;
 
 double smallpt::intersection(Sphere const& sphere, Ray const& ray) noexcept {
     // Solve t^2*d.d + 2*t*(o-p).d + (o-p).(o-p)-R^2 = 0

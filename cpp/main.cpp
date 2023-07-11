@@ -10,7 +10,6 @@
 #include <cstdio>
 #include <cstdlib>
 
-#include <smallpt/constants.hpp>
 #include <smallpt/primitives.hpp>
 #include <smallpt/vec.hpp>
 
@@ -76,7 +75,7 @@ inline constexpr std::array<Sphere, 9> spheres = {
 static Vec
 radiance(Ray const& ray, int depth, span<unsigned short> Xi) noexcept {
     // Distance to intersection
-    double distance{infinity};
+    double distance{0.0};
     // Id of intersected object
     std::size_t id{0};
 

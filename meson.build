@@ -11,7 +11,6 @@ if 'cpp' in get_option('languages')
 
   smallpt_inc = include_directories(['cpp/'])
   smallpt_src = files([
-    'cpp/smallpt/constants.hpp',
     'cpp/smallpt/primitives.hpp',
     'cpp/smallpt/primitives.cpp',
     'cpp/smallpt/vec.hpp',
