@@ -71,12 +71,14 @@ void renderRow(
     const int samples,
     in Camera camera,
 ) @safe @nogc pure nothrow {
+    const size_t row = (height - y - 1) * width;
+
     // Loop cols
     foreach (x; 0 .. width) {
+        const size_t index = row + x;
+
         // 2x2 subpixel rows
         foreach (sy; 0 .. 2) {
-            const size_t index = (height - y - 1) * width + x;
-
             // 2x2 subpixel cols
             foreach (sx; 0 .. 2) {
                 Vec r;
