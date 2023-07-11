@@ -84,20 +84,10 @@ void renderRow(
                 Vec r;
 
                 foreach (_; 0 .. samples) {
-                    const double r1 = 2 * rng.advanceDouble();
-                    const double r2 = 2 * rng.advanceDouble();
-
-                    const double dx =
-                        r1 < 1 ? sqrt(r1) - 1 : 1 - sqrt(2 - r1);
-                    const double dy =
-                        r2 < 1 ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
-
                     const Vec direction = {
                         Vec result;
-                        result =
-                            camera.x * (((sx + 0.5 + dx) / 2 + x) / width - 0.5);
-                        result +=
-                            camera.y * (((sy + 0.5 + dy) / 2 + y) / height - 0.5);
+                        result = camera.x * (((sx + 0.5) / 2 + x) / width - 0.5);
+                        result += camera.y * (((sy + 0.5) / 2 + y) / height - 0.5);
                         result += camera.ray.direction;
                         return result.normalize();
                     }();
