@@ -8,6 +8,8 @@ import std.file;
 import std.stdio;
 import std.conv;
 
+import core.thread.osthread;
+
 import smallpt.primitives;
 import smallpt.vec;
 import smallpt.rng;
@@ -148,8 +150,19 @@ T clamp(T)(in T x) @safe @nogc pure nothrow {
     return x;
 }
 
-int toInt(const double x) @safe @nogc pure nothrow {
-    return cast(int)(pow(clamp(x), 1 / 2.2) * 255 + 0.5);
+struct Camera {
+    Ray ray;
+    Vec x;
+    Vec y;
+
+    @disable this();
+
+    this(int width, int height) @safe @nogc pure nothrow scope {
+        ray = Ray(Vec(50, 52, 295.6), Vec(0, -0.042612, -1).normalize());
+
+        x = Vec(width * 0.5135 / height);
+        y = x.cross(ray.direction).normalize() * 0.5135;
+    }
 }
 
 void renderRow(
@@ -157,9 +170,7 @@ void renderRow(
     const int y,
     scope Vec[] canvas,
     const int samples,
-    const Vec cx,
-    const Vec cy,
-    const Ray cam,
+    in Camera camera,
 ) @trusted @nogc nothrow {
     // Loop cols
     foreach (x; 0 .. width) {
@@ -183,15 +194,15 @@ void renderRow(
                     const Vec direction = () {
                         Vec result;
                         result =
-                            cx * (((sx + 0.5 + dx) / 2 + x) / width - 0.5);
+                            camera.x * (((sx + 0.5 + dx) / 2 + x) / width - 0.5);
                         result +=
-                            cy * (((sy + 0.5 + dy) / 2 + y) / height - 0.5);
-                        result += cam.direction;
+                            camera.y * (((sy + 0.5 + dy) / 2 + y) / height - 0.5);
+                        result += camera.ray.direction;
                         return result.normalize();
                     }();
 
                     // Camera rays are pushed forward to start in interior
-                    const Vec position = cam.position + direction * 140;
+                    const Vec position = camera.ray.position + direction * 140;
                     r += radiance(Ray(position, direction), 0, rng) * (1.0 / samples);
                 }
 
@@ -201,39 +212,38 @@ void renderRow(
     }
 }
 
+int toInt(const double x) @safe @nogc pure nothrow {
+    return cast(int)(pow(clamp(x), 1 / 2.2) * 255 + 0.5);
+}
+
 enum int width = 1024;
 enum int height = 768;
-
-static assert(height % 4 == 0);
-
-import core.thread.osthread;
 
 void main(string[] args) {
     const int samples = (args.length >= 2) ? to!int(args[1]) / 4 : 1;
 
-    const cam = Ray(Vec(50, 52, 295.6), Vec(0, -0.042612, -1).normalize());
-
-    const cx = Vec(width * 0.5135 / height);
-    const Vec cy = cx.cross(cam.direction).normalize() * 0.5135;
+    const camera = Camera(width, height);
 
     auto canvas = new Vec[](width * height);
 
     enum ulong randomMagic = 13889610318698649526;
     Rng rng = {randomMagic};
 
+    static assert(height % 8 == 0);
+
     // Loop over image rows
     for (int y = 0; y < height; y += 8) {
         stderr.writef!"\rRendering (%s spp) %5.2f%%"(samples * 4, 100.0 * y / (height - 1));
 
         Thread[8] threads = [
-            new Thread(() => renderRow(rng, y, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(rng, y + 1, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(rng, y + 2, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(rng, y + 3, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(rng, y + 4, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(rng, y + 5, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(rng, y + 6, canvas, samples, cx, cy, cam)).start(),
-            new Thread(() => renderRow(rng, y + 7, canvas, samples, cx, cy, cam)).start(),
+            new Thread(() => renderRow(rng, y, canvas, samples, camera)).start(),
+            new Thread(() => renderRow(rng, y + 1, canvas, samples, camera)).start(),
+            new Thread(() => renderRow(rng, y + 2, canvas, samples, camera)).start(),
+            new Thread(() => renderRow(rng, y + 3, canvas, samples, camera)).start(),
+            new Thread(() => renderRow(rng, y + 4, canvas, samples, camera)).start(),
+            new Thread(() => renderRow(rng, y + 5, canvas, samples, camera)).start(),
+            new Thread(() => renderRow(rng, y + 6, canvas, samples, camera)).start(),
+            new Thread(() => renderRow(rng, y + 7, canvas, samples, camera)).start(),
         ];
 
         foreach (thread; threads) {
